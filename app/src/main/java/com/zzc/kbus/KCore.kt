@@ -1,18 +1,20 @@
 package com.zzc.kbus
 
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.whenStateAtLeast
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.whenStateAtLeast
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.logging.Level
 
 class KCore : ViewModel() {
@@ -48,8 +50,8 @@ class KCore : ViewModel() {
         isSticky: Boolean,
         onReceived: (T) -> Unit
     ): Job {
-        KInitializer.logger?.log(Level.WARNING, "observe Event:$eventName")
-        return lifecycleOwner.lifecycleScope.launch{
+        KInitializer.logger?.log(Level.WARNING, msg = "observe Event:$eventName")
+        return lifecycleOwner.lifecycleScope.launch {
             lifecycleOwner.lifecycle.whenStateAtLeast(minState) {
                 getEventFlow(eventName, isSticky).collect { value ->
                     this.launch(dispatcher) {
@@ -63,20 +65,26 @@ class KCore : ViewModel() {
     fun <T : Any> observeWithoutLifecycle(
         coroutineScope: CoroutineScope,
         eventName: String,
-        dispatcher: CoroutineDispatcher,
+        schedulerModel: Int,
         isSticky: Boolean,
         delayTime: Long,
         onReceived: (T) -> Unit
     ): Job {
         return coroutineScope.launch {
             getEventFlow(eventName, isSticky).collect { value ->
-                this.launch(dispatcher) {
+                if (schedulerModel == SchedulerModel.sync) {
                     delay(delayTime)
                     invokeReceived(value, onReceived)
+                } else {
+                    delay(delayTime)
+                    withContext(schedulerToDispatcher(schedulerModel)) {
+                        invokeReceived(value, onReceived)
+                    }
                 }
             }
         }
     }
+
 
     suspend fun <T : Any> observeWithoutLifecycle(
         eventName: String,
@@ -89,7 +97,7 @@ class KCore : ViewModel() {
     }
 
     fun postEvent(eventName: String, value: Any, timeMillis: Long = 0, isSticky: Boolean = false) {
-        KInitializer.logger?.log(Level.WARNING, "post Event:$eventName, $isSticky")
+        KInitializer.logger?.log(Level.WARNING, msg = "post Event:$eventName, $isSticky")
         viewModelScope.launch {
             delay(timeMillis)
             getEventFlow(eventName, isSticky).emit(value)
@@ -110,14 +118,14 @@ class KCore : ViewModel() {
         } catch (e: ClassCastException) {
             KInitializer.logger?.log(
                 Level.WARNING,
-                "class cast error on message received: $value",
-                e
+                msg = "class cast error on message received: $value",
+                th = e
             )
         } catch (e: Exception) {
             KInitializer.logger?.log(
                 Level.WARNING,
-                "error on message received: $value",
-                e
+                msg = "error on message received: $value",
+                th = e
             )
         }
     }
@@ -126,5 +134,13 @@ class KCore : ViewModel() {
         val stickyObserverCount = stickyEventFlows[eventName]?.subscriptionCount?.value ?: 0
         val normalObserverCount = eventFlows[eventName]?.subscriptionCount?.value ?: 0
         return stickyObserverCount + normalObserverCount
+    }
+
+    private fun schedulerToDispatcher(scheduler: Int): CoroutineDispatcher {
+        return when (scheduler) {
+            SchedulerModel.main -> Dispatchers.Main
+            SchedulerModel.io -> Dispatchers.IO
+            else -> Dispatchers.Main
+        }
     }
 }

@@ -1,11 +1,11 @@
 package com.zzc.kbus
 
 import android.util.Log
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import java.util.concurrent.ConcurrentHashMap
+import java.util.logging.Level
 
 object KBus {
 
@@ -35,7 +35,7 @@ object KBus {
                             .observeWithoutLifecycle<KMessage>(
                                 CoroutineScope(Dispatchers.Main),
                                 it.parameterTypes[0].name,
-                                schedulerToDispatcher(annotation.schedulerModel),
+                                annotation.schedulerModel,
                                 annotation.sticky,
                                 annotation.delay
                             ) { event ->
@@ -72,7 +72,7 @@ object KBus {
     }
 
     private fun postEvent(eventName: String, value: Any, timeMillis: Long = 0) {
-        Log.i(TAG, "postEvent = $eventName，$value, $timeMillis")
+        KInitializer.logger?.log(Level.INFO, TAG, "postEvent = $eventName，$value, $timeMillis")
         ApplicationScopeViewModelProvider.getApplicationScopeViewModel(KCore::class.java)
             .postEvent(eventName, value, timeMillis)
     }
@@ -81,13 +81,5 @@ object KBus {
         Log.i(TAG, "postStickyEvent = $eventName，$value, $timeMillis")
         ApplicationScopeViewModelProvider.getApplicationScopeViewModel(KCore::class.java)
             .postEvent(eventName, value, timeMillis, true)
-    }
-
-    private fun schedulerToDispatcher(scheduler: Int): CoroutineDispatcher {
-        return when (scheduler) {
-            SchedulerModel.main -> Dispatchers.Main
-            SchedulerModel.io -> Dispatchers.IO
-            else -> Dispatchers.Main
-        }
     }
 }
