@@ -19,13 +19,9 @@ class MainActivity : AppCompatActivity() {
                 Log.i("ttt", "${Thread.currentThread().name} msg:$msg")
             }
         })
+        KBus.postStickyEvent(TestEvent("test"))
         KBus.subscribe(this)
         setContentView(R.layout.activity_main)
-
-        Thread(Runnable {
-            Log.i("ttt", "${Thread.currentThread().name} testMsg")
-            KBus.postMessage(TestEvent("test"))
-        }).start()
     }
 
     override fun onDestroy() {
@@ -33,7 +29,10 @@ class MainActivity : AppCompatActivity() {
         KBus.unSubscribe(this)
     }
 
-    @KBusContext(schedulerModel = SchedulerModel.sync)
+    @KBusContext(
+        schedulerModel = SchedulerModel.Async,
+        sticky = true
+    )
     fun testMsg(event: TestEvent) {
         Log.i("ttt", "${Thread.currentThread().name} testMsg:${event.test}")
     }

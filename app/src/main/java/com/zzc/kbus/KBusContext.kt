@@ -3,25 +3,40 @@ package com.zzc.kbus
 @Target(AnnotationTarget.FUNCTION)
 @Retention(AnnotationRetention.RUNTIME)
 annotation class KBusContext(
-    val schedulerModel: Int = SchedulerModel.main,
+    val schedulerModel: SchedulerModel = SchedulerModel.Origin,
     val delay: Long = 0,
     val sticky: Boolean = false
 )
 
-object SchedulerModel {
+data class KBusContextData(
+    var schedulerModel: SchedulerModel = SchedulerModel.Origin,
+    var delay: Long = 0,
+    var sticky: Boolean = false
+)
+
+enum class SchedulerModel {
+    /**
+     * 主线程执行，如果当前在主线程则马上执行，否则post回主线程执行
+     */
+    Main,
 
     /**
-     * 主线程调用
+     * post回主线程执行，如果当前在主线程则会延迟到下一次looper才执行
      */
-    const val main = 0
+    MainPost,
 
     /**
-     * 子线程调用
+     * 异步线程并发执行
      */
-    const val io = 1
+    Async,
 
     /**
-     * 当前线程同步调用
+     * 异步线程有序执行
      */
-    const val sync = 2
+    AsyncOrder,
+
+    /**
+     * 发通知的当前线程执行 若制定有生命周期则忽略制定的生命周期阶段声明
+     */
+    Origin
 }
