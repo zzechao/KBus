@@ -14,7 +14,6 @@ object KBus {
 
     private const val TAG = "ttt"
 
-
     private val mSlyCenter: ConcurrentHashMap<Class<*>, MutableList<KBusMethodData>> =
         ConcurrentHashMap()
     private val eventObjectCenter: ConcurrentHashMap<Class<out KMessage>,
@@ -66,7 +65,11 @@ object KBus {
                             "event = $event, observerClazz:${observerClazz}, ${it.parameterTypes[0].name}"
                         )
                         if (annotation.sticky && stickyEvent[event] != null) {
-                            stickyEvent[event]?.let { it1 -> postEvent(it1) }
+                            stickyEvent[event]?.let { it1 ->
+                                doDispatcher(
+                                    observer, busMethodData, it1
+                                )
+                            }
                         }
                     }
                 }
@@ -101,50 +104,54 @@ object KBus {
         eventObjectCenter[message::class.java]?.let {
             it.forEach {
                 val observer = mEventObjects[it]
-                val busContextData = mSlyCenter[it]?.firstOrNull { it.event == message::class.java }
-                Log.i(TAG, "postMessage clazz:$it object:$observer busContext:$busContextData")
-                if (observer != null && busContextData != null) {
-                    val delay = busContextData.context.delay
-                    val suspendBlock = suspend {
-                        if (delay > 0) {
-                            delay(delay)
-                        }
-                        busContextData.invokeMethod.invoke(observer, message)
-                    }
-                    val block = {
-                        if (delay > 0) {
-                            Thread.sleep(delay)
-                        }
-                        busContextData.invokeMethod.invoke(observer, message)
-                    }
-                    when (busContextData.context.schedulerModel) {
-                        SchedulerModel.Async -> GlobalScope.launch(Dispatchers.IO) {
-                            suspendBlock()
-                        }
+                val busMethodData = mSlyCenter[it]?.firstOrNull { it.event == message::class.java }
+                Log.i(TAG, "postMessage clazz:$it object:$observer busMethodData:$busMethodData")
+                if (observer != null && busMethodData != null) {
+                    doDispatcher(observer, busMethodData, message)
+                }
+            }
+        }
+    }
 
-                        SchedulerModel.AsyncOrder -> GlobalScope.launch(asyncOrderDispatcher) {
-                            suspendBlock()
-                        }
+    private fun doDispatcher(observer: Any, busContextData: KBusMethodData, message: KMessage) {
+        val delay = busContextData.context.delay
+        val suspendBlock = suspend {
+            if (delay > 0) {
+                delay(delay)
+            }
+            busContextData.invokeMethod.invoke(observer, message)
+        }
+        val block = {
+            if (delay > 0) {
+                Thread.sleep(delay)
+            }
+            busContextData.invokeMethod.invoke(observer, message)
+        }
+        when (busContextData.context.schedulerModel) {
+            SchedulerModel.Async -> GlobalScope.launch(Dispatchers.IO) {
+                suspendBlock()
+            }
 
-                        SchedulerModel.Main -> {
-                            if (isMainThread()) {
-                                block()
-                            } else {
-                                GlobalScope.launch(Dispatchers.Main) {
-                                    suspendBlock()
-                                }
-                            }
-                        }
+            SchedulerModel.AsyncOrder -> GlobalScope.launch(asyncOrderDispatcher) {
+                suspendBlock()
+            }
 
-                        SchedulerModel.MainPost -> GlobalScope.launch(Dispatchers.Main) {
-                            suspendBlock()
-                        }
-
-                        SchedulerModel.Origin -> {
-                            block()
-                        }
+            SchedulerModel.Main -> {
+                if (isMainThread()) {
+                    block()
+                } else {
+                    GlobalScope.launch(Dispatchers.Main) {
+                        suspendBlock()
                     }
                 }
+            }
+
+            SchedulerModel.MainPost -> GlobalScope.launch(Dispatchers.Main) {
+                suspendBlock()
+            }
+
+            SchedulerModel.Origin -> {
+                block()
             }
         }
     }
